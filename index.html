@@ -163,10 +163,6 @@ svg.chart{display:block;width:100%;height:auto}
         <label>דמי ניהול מהצבירה (שנתי)</label>
         <div class="input-shell"><input id="feeAcc" type="text" inputmode="decimal" value="0" placeholder="0"><span class="unit" style="padding-inline-start:8px;padding-inline-end:15px">%</span></div>
       </div>
-      <div class="field full">
-        <label>לא יודעים איזו תשואה? קבלו נקודת פתיחה (ממלא את שדה התשואה)</label>
-        <div class="tracks" id="tracks"></div>
-      </div>
     </div>
 
     <div class="result">
@@ -366,25 +362,16 @@ svg.chart{display:block;width:100%;height:auto}
 </script>
 
 <script>
-const TRACKS=[{name:'סולידי',pct:2.5},{name:'כללי',pct:5},{name:'מנייתי',pct:10}];
 const fmt=new Intl.NumberFormat('he-IL',{maximumFractionDigits:0});
 function grp(v){v=(''+v).replace(/[^\d]/g,'');return v===''?'':(+v).toLocaleString('en-US');}
 function num(id){return +(''+document.getElementById(id).value).replace(/[^\d.]/g,'')||0;}
-
-// quick-fill chips → set the return field (no forced choice)
-(function(){
-  const box=document.getElementById('tracks');
-  box.innerHTML=TRACKS.map(t=>`<div class="track" data-pct="${t.pct}"><div class="t-name">${t.name}</div><div class="t-pct">${t.pct}% בשנה</div></div>`).join('');
-  box.querySelectorAll('.track').forEach(el=>el.onclick=()=>{document.getElementById('ret').value=el.dataset.pct;syncChips();calc();});
-})();
-function syncChips(){const r=num('ret');document.getElementById('tracks').querySelectorAll('.track').forEach(t=>t.classList.toggle('on',+t.dataset.pct===r));}
 
 // comma inputs for money
 ['initial','monthly'].forEach(id=>{
   const el=document.getElementById(id);
   el.addEventListener('input',()=>{const p=el.selectionStart,old=el.value;el.value=grp(el.value);const d=el.value.length-old.length;el.setSelectionRange(p+d,p+d);calc();});
 });
-['ret','years','feeDep','feeAcc'].forEach(id=>document.getElementById(id).addEventListener('input',()=>{if(id==='ret')syncChips();calc();}));
+['ret','years','feeDep','feeAcc'].forEach(id=>document.getElementById(id).addEventListener('input',()=>calc()));
 
 // closed-form FV — annual compounding, annual deposits at start of year (annuity-due), no fees
 function fv(P0,PMT,annualPct,years){const i=annualPct/100,n=Math.round(years),A=12*PMT;if(n<=0)return P0;if(i===0)return P0+A*n;const g=Math.pow(1+i,n);return P0*g+A*(1+i)*(g-1)/i;}
@@ -463,7 +450,7 @@ function short(v){v=Math.round(v);if(v>=1e6)return (v/1e6).toFixed(v>=1e7?0:1)+'
 // ---------- save / share ----------
 const SKEY='richlife-ribit-v1';
 function enc(){return JSON.stringify([document.getElementById('initial').value,document.getElementById('monthly').value,document.getElementById('ret').value,document.getElementById('years').value,document.getElementById('feeDep').value,document.getElementById('feeAcc').value]);}
-function dec(str){try{const a=JSON.parse(str);if(!Array.isArray(a))return false;document.getElementById('initial').value=grp(a[0]);document.getElementById('monthly').value=grp(a[1]);document.getElementById('ret').value=a[2]??'5';document.getElementById('years').value=a[3]??'';document.getElementById('feeDep').value=a[4]??'0';document.getElementById('feeAcc').value=a[5]??'0';syncChips();return true;}catch(e){return false;}}
+function dec(str){try{const a=JSON.parse(str);if(!Array.isArray(a))return false;document.getElementById('initial').value=grp(a[0]);document.getElementById('monthly').value=grp(a[1]);document.getElementById('ret').value=a[2]??'5';document.getElementById('years').value=a[3]??'';document.getElementById('feeDep').value=a[4]??'0';document.getElementById('feeAcc').value=a[5]??'0';return true;}catch(e){return false;}}
 function makeLink(){return location.origin+location.pathname+location.search+'#c='+encodeURIComponent(enc());}
 (function(){
   const btn=document.getElementById('shareBtn'),wrap=document.getElementById('actLink'),field=document.getElementById('linkField'),copy=document.getElementById('copyBtn');
@@ -477,7 +464,7 @@ function flash(el,msg){const o=el.textContent;el.textContent=msg;setTimeout(()=>
   try{localStorage.removeItem(SKEY);}catch(e){}
   const h=(location.hash||'').match(/c=([^&]+)/);
   if(h) dec(decodeURIComponent(h[1]));
-  syncChips(); calc();
+  calc();
 })();
 </script>
 </body>

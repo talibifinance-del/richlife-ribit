@@ -76,6 +76,14 @@ body{
 .r-cell.fee .v{color:#f0c9a0}
 .insight{margin-top:13px;font-size:13.5px;font-weight:700;color:var(--pine-darker);background:var(--sage-tint);border-radius:12px;padding:11px 14px;text-align:center}
 .insight b{color:var(--pine)}
+.feebreak{margin-top:13px;background:rgba(var(--red-rgb),.05);border:1.5px solid rgba(var(--red-rgb),.2);border-radius:14px;padding:14px 16px}
+.fb-title{font-size:14px;font-weight:900;color:#8f3a29;margin-bottom:9px}
+.fb-row{display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:13.5px;font-weight:700;color:var(--ink);padding:6px 0;border-top:1px solid rgba(var(--red-rgb),.12)}
+.fb-row:first-of-type{border-top:none}
+.fb-row b{color:#8f3a29;font-weight:900;white-space:nowrap}
+.fb-row.total{margin-top:2px;border-top:2px solid rgba(var(--red-rgb),.25);font-size:14.5px;font-weight:900}
+.fb-note{margin-top:10px;font-size:12.5px;font-weight:700;color:var(--ink-soft);line-height:1.5}
+.fb-note b{color:var(--pine-deep)}
 
 /* chart */
 .chart-card{margin-top:16px;background:var(--card);border-radius:20px;padding:clamp(14px,3vw,20px);box-shadow:var(--shadow);border:1px solid rgba(var(--pine-rgb),.10)}
@@ -132,7 +140,7 @@ svg.chart{display:block;width:100%;height:auto}
   <div class="card">
     <div class="fields">
       <div class="field">
-        <label>הפקדה התחלתית (יש לי כבר)</label>
+        <label>הפקדה ראשונית (יש לי כבר)</label>
         <div class="input-shell"><span class="unit">₪</span><input id="initial" type="text" inputmode="numeric" value="10,000" placeholder="0"></div>
       </div>
       <div class="field">
@@ -140,15 +148,23 @@ svg.chart{display:block;width:100%;height:auto}
         <div class="input-shell"><span class="unit">₪</span><input id="monthly" type="text" inputmode="numeric" value="1,000" placeholder="0"></div>
       </div>
       <div class="field">
-        <label>בעוד כמה שנים?</label>
+        <label>תשואה שנתית משוערת</label>
+        <div class="input-shell"><input id="ret" type="text" inputmode="decimal" value="5" placeholder="0"><span class="unit" style="padding-inline-start:8px;padding-inline-end:15px">%</span></div>
+      </div>
+      <div class="field">
+        <label>מספר שנות הפקדה</label>
         <div class="input-shell"><input id="years" type="number" inputmode="numeric" value="20" placeholder="0"><span class="unit" style="padding-inline-start:8px;padding-inline-end:15px">שנים</span></div>
       </div>
       <div class="field">
-        <label>דמי ניהול שנתיים (מהצבירה)</label>
-        <div class="input-shell"><input id="fee" type="text" inputmode="decimal" value="0" placeholder="0"><span class="unit" style="padding-inline-start:8px;padding-inline-end:15px">%</span></div>
+        <label>דמי ניהול מהפקדה</label>
+        <div class="input-shell"><input id="feeDep" type="text" inputmode="decimal" value="0" placeholder="0"><span class="unit" style="padding-inline-start:8px;padding-inline-end:15px">%</span></div>
+      </div>
+      <div class="field">
+        <label>דמי ניהול מהצבירה (שנתי)</label>
+        <div class="input-shell"><input id="feeAcc" type="text" inputmode="decimal" value="0" placeholder="0"><span class="unit" style="padding-inline-start:8px;padding-inline-end:15px">%</span></div>
       </div>
       <div class="field full">
-        <label>איך משקיעים? (משנה את התשואה המשוערת)</label>
+        <label>לא יודעים איזו תשואה? קבלו נקודת פתיחה (ממלא את שדה התשואה)</label>
         <div class="tracks" id="tracks"></div>
       </div>
     </div>
@@ -163,6 +179,14 @@ svg.chart{display:block;width:100%;height:auto}
       </div>
     </div>
     <div class="insight" id="insight"></div>
+    <div class="feebreak" id="feeBreak" hidden>
+      <div class="fb-title">🧾 מה דמי הניהול עשו לחיסכון שלך</div>
+      <div class="fb-row"><span>דמי ניהול מהפקדה</span><b id="fbDep">0 ₪</b></div>
+      <div class="fb-row"><span>דמי ניהול מהצבירה</span><b id="fbAcc">0 ₪</b></div>
+      <div class="fb-row"><span>אובדן רווח שהם מנעו (הריבית עליהם)</span><b id="fbLost">0 ₪</b></div>
+      <div class="fb-row total"><span>סה"כ עלות דמי הניהול</span><b id="fbTotal">0 ₪</b></div>
+      <div class="fb-note">בלי דמי ניהול היה לך <b id="fbNoFee">0 ₪</b> - במקום <b id="fbWith">0 ₪</b>.</div>
+    </div>
   </div>
 
   <div class="chart-card">
@@ -343,96 +367,104 @@ svg.chart{display:block;width:100%;height:auto}
 
 <script>
 const TRACKS=[{name:'סולידי',pct:2.5},{name:'כללי',pct:5},{name:'מנייתי',pct:10}];
-let pct=5;
 const fmt=new Intl.NumberFormat('he-IL',{maximumFractionDigits:0});
 function grp(v){v=(''+v).replace(/[^\d]/g,'');return v===''?'':(+v).toLocaleString('en-US');}
 function num(id){return +(''+document.getElementById(id).value).replace(/[^\d.]/g,'')||0;}
 
-// build tracks
+// quick-fill chips → set the return field (no forced choice)
 (function(){
   const box=document.getElementById('tracks');
-  box.innerHTML=TRACKS.map(t=>`<div class="track ${pct===t.pct?'on':''}" data-pct="${t.pct}"><div class="t-name">${t.name}</div><div class="t-pct">${t.pct}% בשנה</div></div>`).join('');
-  box.querySelectorAll('.track').forEach(el=>el.onclick=()=>{pct=+el.dataset.pct;box.querySelectorAll('.track').forEach(t=>t.classList.toggle('on',t===el));calc();persist();});
+  box.innerHTML=TRACKS.map(t=>`<div class="track" data-pct="${t.pct}"><div class="t-name">${t.name}</div><div class="t-pct">${t.pct}% בשנה</div></div>`).join('');
+  box.querySelectorAll('.track').forEach(el=>el.onclick=()=>{document.getElementById('ret').value=el.dataset.pct;syncChips();calc();});
 })();
+function syncChips(){const r=num('ret');document.getElementById('tracks').querySelectorAll('.track').forEach(t=>t.classList.toggle('on',+t.dataset.pct===r));}
 
-// comma inputs
+// comma inputs for money
 ['initial','monthly'].forEach(id=>{
   const el=document.getElementById(id);
-  el.addEventListener('input',()=>{const p=el.selectionStart,old=el.value;el.value=grp(el.value);el.setSelectionRange(el.value.length-(old.length-p),el.value.length-(old.length-p));calc();persist();});
+  el.addEventListener('input',()=>{const p=el.selectionStart,old=el.value;el.value=grp(el.value);const d=el.value.length-old.length;el.setSelectionRange(p+d,p+d);calc();});
 });
-['years','fee'].forEach(id=>document.getElementById(id).addEventListener('input',()=>{calc();persist();}));
+['ret','years','feeDep','feeAcc'].forEach(id=>document.getElementById(id).addEventListener('input',()=>{if(id==='ret')syncChips();calc();}));
 
-function fv(P0,PMT,annual,years){
-  const r=annual/100/12, n=Math.round(years*12);
-  if(n<=0) return P0;
-  if(r===0) return P0+PMT*n;
-  const g=Math.pow(1+r,n);
-  return P0*g + PMT*(g-1)/r;
+// closed-form FV — annual compounding, annual deposits at start of year (annuity-due), no fees
+function fv(P0,PMT,annualPct,years){const i=annualPct/100,n=Math.round(years),A=12*PMT;if(n<=0)return P0;if(i===0)return P0+A*n;const g=Math.pow(1+i,n);return P0*g+A*(1+i)*(g-1)/i;}
+
+// year-by-year simulation with deposit-fee (off each deposit) + accumulation-fee (annual % of balance)
+function sim(P0,PMT,annualPct,years,fDep,fAcc){
+  const n=Math.round(years), i=annualPct/100, d=fDep/100, af=fAcc/100, A=12*PMT;
+  let bal=P0*(1-d)+A*(1-d), depFees=(P0+A)*d, accFees=0;
+  const series=[bal];
+  for(let y=1;y<=n;y++){
+    bal*=(1+i);                           // grow through the year
+    const f=bal*af; accFees+=f; bal-=f;   // accumulation fee on the balance
+    series.push(bal);
+    if(y<n){ bal+=A*(1-d); depFees+=A*d; } // next year's deposit (start of year)
+  }
+  return {final:bal,depFees,accFees,series};
 }
 
 function calc(){
-  const P0=num('initial'), PMT=num('monthly'), years=Math.max(0,num('years')), fee=Math.max(0,num('fee'));
-  const net=Math.max(0,pct-fee);
-  const finalNet=fv(P0,PMT,net,years);
-  const finalGross=fv(P0,PMT,pct,years);
+  const P0=num('initial'),PMT=num('monthly'),ret=Math.max(0,num('ret')),years=Math.max(0,num('years')),fDep=Math.max(0,num('feeDep')),fAcc=Math.max(0,num('feeAcc'));
+  const withF=sim(P0,PMT,ret,years,fDep,fAcc);
+  const noFee=fv(P0,PMT,ret,years);
   const deposited=P0+PMT*12*years;
-  const gain=Math.max(0,finalNet-deposited);
-  const feesPaid=Math.max(0,finalGross-finalNet);
+  const gain=Math.max(0,withF.final-deposited);
+  const totalCost=Math.max(0,noFee-withF.final);
+  const lost=Math.max(0,totalCost-withF.depFees-withF.accFees);
+  const hasFee=fDep>0||fAcc>0;
 
   document.getElementById('rYears').textContent=years||0;
-  document.getElementById('rFinal').innerHTML=fmt.format(Math.round(finalNet))+'<small> ₪</small>';
+  document.getElementById('rFinal').innerHTML=fmt.format(Math.round(withF.final))+'<small> ₪</small>';
   document.getElementById('rDeposit').textContent=fmt.format(Math.round(deposited))+' ₪';
   document.getElementById('rGain').textContent=fmt.format(Math.round(gain))+' ₪';
   const feeCell=document.getElementById('feeCell'), legFee=document.getElementById('legFee');
-  if(fee>0){feeCell.hidden=false;legFee.hidden=false;document.getElementById('rFee').textContent='-'+fmt.format(Math.round(feesPaid))+' ₪';}
-  else{feeCell.hidden=true;legFee.hidden=true;}
+  feeCell.hidden=!hasFee; legFee.hidden=!hasFee;
+  if(hasFee) document.getElementById('rFee').textContent='-'+fmt.format(Math.round(totalCost))+' ₪';
 
-  // insight
+  const fb=document.getElementById('feeBreak');
+  fb.hidden=!hasFee;
+  if(hasFee){
+    document.getElementById('fbDep').textContent=fmt.format(Math.round(withF.depFees))+' ₪';
+    document.getElementById('fbAcc').textContent=fmt.format(Math.round(withF.accFees))+' ₪';
+    document.getElementById('fbLost').textContent=fmt.format(Math.round(lost))+' ₪';
+    document.getElementById('fbTotal').textContent=fmt.format(Math.round(totalCost))+' ₪';
+    document.getElementById('fbNoFee').textContent=fmt.format(Math.round(noFee))+' ₪';
+    document.getElementById('fbWith').textContent=fmt.format(Math.round(withF.final))+' ₪';
+  }
+
   const ins=document.getElementById('insight');
-  if(deposited>0 && years>0){
-    const mult=finalNet/deposited;
-    ins.innerHTML=`מתוך ההון הסופי, <b>${fmt.format(Math.round(gain))} ₪</b> זה רווח שהכסף ייצר לבד - הפקדת ${fmt.format(Math.round(deposited))} ₪ והוא צמח פי <b>${mult.toFixed(1)}</b>.`;
-    ins.style.display='block';
-  } else ins.style.display='none';
+  if(deposited>0 && years>0){const mult=withF.final/deposited;ins.innerHTML=`מתוך ההון הסופי, <b>${fmt.format(Math.round(gain))} ₪</b> זה רווח שהכסף ייצר לבד - הפקדת ${fmt.format(Math.round(deposited))} ₪ והוא צמח פי <b>${mult.toFixed(1)}</b>.`;ins.style.display='block';}
+  else ins.style.display='none';
 
-  drawChart({P0,PMT,years,net,gross:pct,fee});
+  drawChart({P0,PMT,ret,years,withSeries:withF.series,hasFee});
 }
 
-function drawChart({P0,PMT,years,net,gross,fee}){
+function drawChart({P0,PMT,ret,years,withSeries,hasFee}){
   const W=720,H=360,padL=64,padR=18,padT=18,padB=34;
   const yrs=Math.max(1,Math.round(years));
-  const sav=[],inv=[],nofee=[];
-  for(let y=0;y<=yrs;y++){sav.push(P0+PMT*12*y);inv.push(fv(P0,PMT,net,y));nofee.push(fv(P0,PMT,gross,y));}
-  const maxV=Math.max(...inv,...sav,...(fee>0?nofee:[0]),1);
+  const sav=[],nofee=[];
+  for(let y=0;y<=yrs;y++){sav.push(P0+PMT*12*y);nofee.push(fv(P0,PMT,ret,y));}
+  const inv=withSeries.slice(0,yrs+1);
+  while(inv.length<yrs+1) inv.push(inv[inv.length-1]);
+  const maxV=Math.max(...inv,...sav,...(hasFee?nofee:[0]),1);
   const x=i=>padL+(W-padL-padR)*(i/yrs);
   const yv=v=>H-padB-(H-padT-padB)*(v/maxV);
   const line=a=>a.map((v,i)=>`${i?'L':'M'}${x(i).toFixed(1)},${yv(v).toFixed(1)}`).join(' ');
   const area=a=>`${line(a)} L${x(yrs).toFixed(1)},${(H-padB)} L${padL},${(H-padB)} Z`;
-  // y grid + labels (4 lines)
   let grid='';
   for(let k=0;k<=4;k++){const v=maxV*k/4, gy=yv(v);grid+=`<line x1="${padL}" y1="${gy.toFixed(1)}" x2="${W-padR}" y2="${gy.toFixed(1)}" stroke="rgba(95,125,106,.13)" stroke-width="1"/><text x="${padL-8}" y="${(gy+4).toFixed(1)}" text-anchor="end" font-size="11" font-weight="700" fill="#51625a">${short(v)}</text>`;}
-  // x labels (start, mid, end)
-  let xl='';[0,Math.round(yrs/2),yrs].forEach(i=>{if(i>=0&&i<=yrs)xl+=`<text x="${x(i).toFixed(1)}" y="${H-12}" text-anchor="middle" font-size="11" font-weight="700" fill="#51625a">${i} ש'</text>`;});
+  let xl='';[0,Math.round(yrs/2),yrs].forEach(i=>{xl+=`<text x="${x(i).toFixed(1)}" y="${H-12}" text-anchor="middle" font-size="11" font-weight="700" fill="#51625a">${i} ש'</text>`;});
   const dot=(a,c)=>`<circle cx="${x(yrs).toFixed(1)}" cy="${yv(a[yrs]).toFixed(1)}" r="4.5" fill="${c}"/>`;
-  const feeLine=fee>0?`<path d="${line(nofee)}" fill="none" stroke="#c1553f" stroke-width="2" stroke-dasharray="5 4" opacity=".8"/>`:'';
-  document.getElementById('chart').innerHTML=`
-    <defs><linearGradient id="gInv" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="rgba(95,125,106,.28)"/><stop offset="1" stop-color="rgba(95,125,106,.02)"/></linearGradient></defs>
-    ${grid}${xl}
-    <path d="${area(sav)}" fill="rgba(201,180,135,.16)"/>
-    <path d="${line(sav)}" fill="none" stroke="#c9b487" stroke-width="2.5"/>
-    <path d="${area(inv)}" fill="url(#gInv)"/>
-    <path d="${line(inv)}" fill="none" stroke="#5f7d6a" stroke-width="3"/>
-    ${feeLine}
-    ${dot(sav,'#c9b487')}${dot(inv,'#5f7d6a')}`;
+  const feeLine=hasFee?`<path d="${line(nofee)}" fill="none" stroke="#c1553f" stroke-width="2" stroke-dasharray="5 4" opacity=".85"/>${dot(nofee,'#c1553f')}`:'';
+  document.getElementById('chart').innerHTML=`<defs><linearGradient id="gInv" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="rgba(95,125,106,.28)"/><stop offset="1" stop-color="rgba(95,125,106,.02)"/></linearGradient></defs>${grid}${xl}<path d="${area(sav)}" fill="rgba(201,180,135,.16)"/><path d="${line(sav)}" fill="none" stroke="#c9b487" stroke-width="2.5"/><path d="${area(inv)}" fill="url(#gInv)"/><path d="${line(inv)}" fill="none" stroke="#5f7d6a" stroke-width="3"/>${feeLine}${dot(sav,'#c9b487')}${dot(inv,'#5f7d6a')}`;
 }
 function short(v){v=Math.round(v);if(v>=1e6)return (v/1e6).toFixed(v>=1e7?0:1)+'M';if(v>=1e3)return Math.round(v/1e3)+'K';return v;}
 
 // ---------- save / share ----------
 const SKEY='richlife-ribit-v1';
-function enc(){return JSON.stringify([document.getElementById('initial').value,document.getElementById('monthly').value,document.getElementById('years').value,document.getElementById('fee').value,pct]);}
-function dec(str){try{const a=JSON.parse(str);if(!Array.isArray(a))return false;document.getElementById('initial').value=grp(a[0]);document.getElementById('monthly').value=grp(a[1]);document.getElementById('years').value=a[2]??'';document.getElementById('fee').value=a[3]??'0';pct=(a[4]??5);document.getElementById('tracks').querySelectorAll('.track').forEach(t=>t.classList.toggle('on',+t.dataset.pct===pct));return true;}catch(e){return false;}}
+function enc(){return JSON.stringify([document.getElementById('initial').value,document.getElementById('monthly').value,document.getElementById('ret').value,document.getElementById('years').value,document.getElementById('feeDep').value,document.getElementById('feeAcc').value]);}
+function dec(str){try{const a=JSON.parse(str);if(!Array.isArray(a))return false;document.getElementById('initial').value=grp(a[0]);document.getElementById('monthly').value=grp(a[1]);document.getElementById('ret').value=a[2]??'5';document.getElementById('years').value=a[3]??'';document.getElementById('feeDep').value=a[4]??'0';document.getElementById('feeAcc').value=a[5]??'0';syncChips();return true;}catch(e){return false;}}
 function makeLink(){return location.origin+location.pathname+location.search+'#c='+encodeURIComponent(enc());}
-function persist(){/* device memory disabled on purpose: the share-link is the only saved copy, so the plain URL stays fresh */}
 (function(){
   const btn=document.getElementById('shareBtn'),wrap=document.getElementById('actLink'),field=document.getElementById('linkField'),copy=document.getElementById('copyBtn');
   btn.onclick=()=>{const link=makeLink();field.value=link;wrap.hidden=false;field.focus();field.select();try{navigator.clipboard.writeText(link).then(()=>flash(btn,'✓ הקישור הועתק'),()=>{});}catch(e){}};
@@ -445,7 +477,7 @@ function flash(el,msg){const o=el.textContent;el.textContent=msg;setTimeout(()=>
   try{localStorage.removeItem(SKEY);}catch(e){}
   const h=(location.hash||'').match(/c=([^&]+)/);
   if(h) dec(decodeURIComponent(h[1]));
-  calc();
+  syncChips(); calc();
 })();
 </script>
 </body>

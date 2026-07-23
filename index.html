@@ -86,7 +86,15 @@ body{
 .fb-note b{color:var(--pine-deep)}
 
 /* chart */
-.chart-card{margin-top:16px;background:var(--card);border-radius:20px;padding:clamp(14px,3vw,20px);box-shadow:var(--shadow);border:1px solid rgba(var(--pine-rgb),.10)}
+.chart-card{margin-top:16px;background:var(--card);border-radius:20px;padding:clamp(14px,3vw,20px);box-shadow:var(--shadow);border:1px solid rgba(var(--pine-rgb),.10);position:relative}
+svg.chart{touch-action:pan-y}
+.chart-tip{position:absolute;z-index:5;pointer-events:none;display:none;background:rgba(30,43,37,.96);color:#fff;border-radius:12px;padding:10px 12px;font-size:12.5px;font-weight:700;box-shadow:0 8px 24px rgba(0,0,0,.28);min-width:168px;line-height:1.55}
+.chart-tip .tt-yr{font-size:13px;font-weight:900;margin-bottom:5px;text-align:center;border-bottom:1px solid rgba(255,255,255,.16);padding-bottom:5px}
+.chart-tip .tt-row{display:flex;align-items:center;gap:7px}
+.chart-tip .tt-row i{width:11px;height:11px;border-radius:3px;flex:none}
+.chart-tip .tt-row b{margin-inline-start:auto;white-space:nowrap}
+.chart-tip .tt-diff{margin-top:6px;padding-top:6px;border-top:1px solid rgba(255,255,255,.16);color:#bfe6c6;text-align:center}
+.chart-tip .tt-diff b{color:#bfe6c6}
 .chart-head{font-size:16px;font-weight:900;color:var(--pine-darker);display:flex;align-items:center;gap:8px;margin-bottom:4px}
 .chart-sub{font-size:12.5px;font-weight:600;color:var(--ink-soft);margin-bottom:12px}
 .chart-legend{display:flex;gap:16px;flex-wrap:wrap;justify-content:center;margin-top:10px;font-size:12.5px;font-weight:800}
@@ -189,6 +197,8 @@ svg.chart{display:block;width:100%;height:auto}
     <div class="chart-head">📈 השקעה מול חיסכון</div>
     <div class="chart-sub">אותו כסף בדיוק - למעלה מה שקורה כשמשקיעים, למטה מה שקורה כשרק שומרים בצד בלי תשואה.</div>
     <div class="chart-wrap"><svg class="chart" id="chart" viewBox="0 0 720 360" preserveAspectRatio="xMidYMid meet" role="img" aria-label="גרף השוואה בין השקעה לחיסכון לאורך השנים"></svg></div>
+    <div class="chart-tip" id="chartTip"></div>
+    <div class="chart-sub" style="text-align:center;margin:8px 0 0;font-size:11.5px">👆 העבירו את העכבר (או אצבע) על הגרף כדי לראות את ההשוואה בכל שנה</div>
     <div class="chart-legend">
       <span><i style="background:var(--pine)"></i>השקעה (ריבית דה ריבית)</span>
       <span><i style="background:#c9b487"></i>חיסכון (בלי תשואה)</span>
@@ -443,8 +453,45 @@ function drawChart({P0,PMT,ret,years,withSeries,hasFee}){
   let xl='';[0,Math.round(yrs/2),yrs].forEach(i=>{xl+=`<text x="${x(i).toFixed(1)}" y="${H-12}" text-anchor="middle" font-size="11" font-weight="700" fill="#51625a">${i} ש'</text>`;});
   const dot=(a,c)=>`<circle cx="${x(yrs).toFixed(1)}" cy="${yv(a[yrs]).toFixed(1)}" r="4.5" fill="${c}"/>`;
   const feeLine=hasFee?`<path d="${line(nofee)}" fill="none" stroke="#c1553f" stroke-width="2" stroke-dasharray="5 4" opacity=".85"/>${dot(nofee,'#c1553f')}`:'';
-  document.getElementById('chart').innerHTML=`<defs><linearGradient id="gInv" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="rgba(95,125,106,.28)"/><stop offset="1" stop-color="rgba(95,125,106,.02)"/></linearGradient></defs>${grid}${xl}<path d="${area(sav)}" fill="rgba(201,180,135,.16)"/><path d="${line(sav)}" fill="none" stroke="#c9b487" stroke-width="2.5"/><path d="${area(inv)}" fill="url(#gInv)"/><path d="${line(inv)}" fill="none" stroke="#5f7d6a" stroke-width="3"/>${feeLine}${dot(sav,'#c9b487')}${dot(inv,'#5f7d6a')}`;
+  document.getElementById('chart').innerHTML=`<defs><linearGradient id="gInv" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="rgba(95,125,106,.28)"/><stop offset="1" stop-color="rgba(95,125,106,.02)"/></linearGradient></defs>${grid}${xl}<path d="${area(sav)}" fill="rgba(201,180,135,.16)"/><path d="${line(sav)}" fill="none" stroke="#c9b487" stroke-width="2.5"/><path d="${area(inv)}" fill="url(#gInv)"/><path d="${line(inv)}" fill="none" stroke="#5f7d6a" stroke-width="3"/>${feeLine}${dot(sav,'#c9b487')}${dot(inv,'#5f7d6a')}<g id="hoverLayer"></g>`;
+  CH={yrs,sav,inv,nofee,hasFee,x,yv,padL,padR,padT,padB,W,H};
 }
+let CH=null;
+(function setupHover(){
+  const svg=document.getElementById('chart'), tip=document.getElementById('chartTip'), card=svg.closest('.chart-card');
+  function move(evt){
+    if(!CH) return;
+    const rect=svg.getBoundingClientRect();
+    const cx=evt.touches?evt.touches[0].clientX:evt.clientX;
+    const vbx=(cx-rect.left)/rect.width*CH.W;
+    let i=Math.round((vbx-CH.padL)/((CH.W-CH.padL-CH.padR)/CH.yrs));
+    i=Math.max(0,Math.min(CH.yrs,i));
+    const gx=CH.x(i);
+    let g=`<line x1="${gx.toFixed(1)}" y1="${CH.padT}" x2="${gx.toFixed(1)}" y2="${CH.H-CH.padB}" stroke="rgba(95,125,106,.4)" stroke-width="1.5" stroke-dasharray="3 3"/>`;
+    g+=`<circle cx="${gx.toFixed(1)}" cy="${CH.yv(CH.sav[i]).toFixed(1)}" r="5" fill="#c9b487" stroke="#fff" stroke-width="1.5"/>`;
+    g+=`<circle cx="${gx.toFixed(1)}" cy="${CH.yv(CH.inv[i]).toFixed(1)}" r="5.5" fill="#5f7d6a" stroke="#fff" stroke-width="1.5"/>`;
+    if(CH.hasFee) g+=`<circle cx="${gx.toFixed(1)}" cy="${CH.yv(CH.nofee[i]).toFixed(1)}" r="5" fill="#c1553f" stroke="#fff" stroke-width="1.5"/>`;
+    document.getElementById('hoverLayer').innerHTML=g;
+    const gainI=Math.round(CH.inv[i]-CH.sav[i]);
+    let rows=`<div class="tt-yr">שנה ${i}</div><div class="tt-row"><i style="background:#5f7d6a"></i>השקעה: <b>${fmt.format(Math.round(CH.inv[i]))} ₪</b></div><div class="tt-row"><i style="background:#c9b487"></i>חיסכון: <b>${fmt.format(Math.round(CH.sav[i]))} ₪</b></div>`;
+    if(CH.hasFee) rows+=`<div class="tt-row"><i style="background:#c1553f"></i>בלי דמי ניהול: <b>${fmt.format(Math.round(CH.nofee[i]))} ₪</b></div>`;
+    rows+=`<div class="tt-diff">הרווח מהריבית: <b>+${fmt.format(gainI)} ₪</b></div>`;
+    tip.innerHTML=rows; tip.style.display='block';
+    const cardRect=card.getBoundingClientRect();
+    const px=(rect.left-cardRect.left)+gx/CH.W*rect.width;
+    const py=(rect.top-cardRect.top)+CH.yv(Math.max(CH.inv[i],CH.hasFee?CH.nofee[i]:0))/CH.H*rect.height;
+    let left=px-tip.offsetWidth/2;
+    left=Math.max(6,Math.min(left,cardRect.width-tip.offsetWidth-6));
+    tip.style.left=left+'px';
+    tip.style.top=Math.max(6,py-tip.offsetHeight-14)+'px';
+  }
+  function leave(){document.getElementById('hoverLayer').innerHTML='';tip.style.display='none';}
+  svg.addEventListener('mousemove',move);
+  svg.addEventListener('mouseleave',leave);
+  svg.addEventListener('touchstart',move,{passive:true});
+  svg.addEventListener('touchmove',move,{passive:true});
+  svg.addEventListener('touchend',leave);
+})();
 function short(v){v=Math.round(v);if(v>=1e6)return (v/1e6).toFixed(v>=1e7?0:1)+'M';if(v>=1e3)return Math.round(v/1e3)+'K';return v;}
 
 // ---------- save / share ----------
